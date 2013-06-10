@@ -67,12 +67,6 @@
                     android:onClick="randomColor"
                     android:text="@string/button_random" />
 
-                <Button
-                    android:id="@+id/enterHexButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:onClick="enterHex"
-                    android:text="@string/button_hex" />
             </LinearLayout>
         </LinearLayout>
 
