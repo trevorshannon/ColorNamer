@@ -21,13 +21,11 @@ public final class R {
         public static final int main_layout=0x7f070000;
         public static final int randomButton=0x7f070008;
         public static final int result1_textview=0x7f070004;
-        public static final int result2_textview=0x7f070009;
         public static final int results_holder_layout=0x7f070003;
         public static final int seekBar1=0x7f070007;
     }
     public static final class layout {
         public static final int activity_main=0x7f030000;
-        public static final int color_picker_fragment=0x7f030001;
     }
     public static final class string {
         public static final int app_name=0x7f050000;
