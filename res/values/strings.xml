@@ -6,5 +6,8 @@
     <string name="color_picker_slider_text">Use the slider or pinch the color picker to add or subtract blue for all possible hex colors.</string>
     <string name="color_picker_slider_text_short">Use the slider to add or subtract blue, creating all possible hex colors.</string>
     <string name="button_random">Random</string>
-    
+    <string name="title_activity_device_list">DeviceListActivity</string>
+    <string name="hello_world">Hello world!</string>
+    <string name="action_settings">Settings</string>
+
 </resources>
