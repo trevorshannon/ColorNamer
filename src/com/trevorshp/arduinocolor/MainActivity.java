@@ -1,11 +1,12 @@
 package com.trevorshp.arduinocolor;
 
 
-import java.io.IOException;
-
-import android.content.Context;
+import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.content.Intent;
 import android.graphics.Color;
-import android.hardware.usb.UsbManager;
 import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
 import android.util.DisplayMetrics;
@@ -17,24 +18,35 @@ import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.SeekBar.OnSeekBarChangeListener;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import com.hoho.android.usbserial.driver.UsbSerialDriver;
-import com.hoho.android.usbserial.driver.UsbSerialProber;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.UUID;
 
 
- 
 public class MainActivity extends FragmentActivity implements OnTouchListener, OnSeekBarChangeListener {
-	public final static String TAG = "AndroidColor";
+
+    public final static String TAG = "AndroidColor";
 	public ColorPickerView colorPicker;
 	private TextView text1;
 	private static final int blueStart = 100;
-	
-	private UsbManager usbManager;
-	private UsbSerialDriver device;
-  
-	@Override
+    private final int REQUEST_CONNECT_DEVICE = 1;
+    private final int REQUEST_ENABLE_BT = 9;
+    private BluetoothAdapter mBluetoothAdapter = null;
+
+    private BluetoothSocket mmSocket = null;
+    private BluetoothDevice mmDevice = null;
+    private InputStream mmInStream = null;
+    private OutputStream mmOutStream = null;
+
+    private UUID myUUID = null;
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
+
         setContentView(R.layout.activity_main);
         LinearLayout layout = (LinearLayout) findViewById(R.id.color_picker_layout);
         final int width = layout.getWidth();
@@ -53,52 +65,82 @@ public class MainActivity extends FragmentActivity implements OnTouchListener, O
 		seek.setProgress(blueStart);
 		seek.setMax(255);
 		seek.setOnSeekBarChangeListener(this);
-		
-		// Get UsbManager from Android.
-		usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
-    } 
+
+        //Importante! Voce deve usar o UUID correto para o SPP - Serial Port Profile
+        myUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+
+        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+
+        if (mBluetoothAdapter == null) {
+            // Device does not support Bluetooth
+            Toast.makeText(this, "Estranho. Mas esse dispositivo nao suporta bluetooth :S", Toast.LENGTH_LONG).show();
+        }   else    {
+            if (!mBluetoothAdapter.isEnabled()) {
+                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                this.startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+            }   else    {
+                // Launch the DeviceListActivity to see devices and do scan
+                Intent serverIntent = new Intent(this, DeviceListActivity.class);
+                this.startActivityForResult(serverIntent, REQUEST_CONNECT_DEVICE);
+
+            }
+        }
+    }
+
+    public void onActivityResult(int requestCode, int resultCode, Intent data)      {
+        switch (requestCode)    {
+            case REQUEST_CONNECT_DEVICE:
+                if (resultCode== Activity.RESULT_OK)    {
+                    mBluetoothAdapter.cancelDiscovery();
+
+                    String endereco = data.getExtras().getString(DeviceListActivity.EXTRA_DEVICE_ADDRESS);
+                    Log.i("ConexaoBluetooth", "Endereco do Bluetooth: " + endereco);
+                    mmDevice = mBluetoothAdapter.getRemoteDevice(endereco);
+
+                    //send the color to the serial device
+                    if (mmDevice != null) {
+                        try {
+
+                            System.out.println(mmDevice.getName());
+                            // Cria o socket utilizando o UUID
+                            mmSocket = mmDevice.createInsecureRfcommSocketToServiceRecord(myUUID);
+
+                            // Conecta ao dispositivo escolhido
+                            mmSocket.connect();
+
+                            // Obtem os fluxos de entrada e saida que lidam com transmissões através do socket
+                            mmInStream = mmSocket.getInputStream();
+                            mmOutStream = mmSocket.getOutputStream();
+
+                        }   catch (Exception ex)    {
+                            Log.e("ConexaoBluetooth", ex.getLocalizedMessage(), ex);
+                            Toast.makeText(this, "Ocorreu um erro no envio da mensagem!" + ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
+                        }
+                    }
+                }
+            break;
+        }
+    }
 	
 	 @Override
     protected void onPause() {
         super.onPause();
         //check if the device is already closed
-        if (device != null) {
+        if (mmSocket != null) {
             try {
-                device.close();
+                mmSocket.close();
             } catch (IOException e) {
                 //we couldn't close the device, but there's nothing we can do about it!
             }
             //remove the reference to the device
-            device = null;
+            mmSocket = null;
         }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        //get a USB to Serial device object
-        device = UsbSerialProber.acquire(usbManager);
-        if (device == null) {
-        	//there is no device connected!
-            Log.d(TAG, "No USB serial device connected.");
-        } else {
-            try {
-            	//open the device
-                device.open();
-                //set the communication speed
-                device.setBaudRate(115200); //make sure this matches your device's setting!
-            } catch (IOException err) {
-                Log.e(TAG, "Error setting up USB device: " + err.getMessage(), err);
-                try {
-                	//something failed, so try closing the device
-                	device.close();
-                } catch (IOException err2) {
-                    //couldn't close, but there's nothing more to do!
-                }
-                device = null;
-                return;
-            }
-        }
+
     }
 	    
 	@Override
@@ -115,15 +157,43 @@ public class MainActivity extends FragmentActivity implements OnTouchListener, O
 				dataToSend[i] = 0x0B;
 			}
 		}
-		//send the color to the serial device
-		if (device != null){
-			try{
-				device.write(dataToSend, 500);
-			}
-			catch (IOException e){
-				Log.e(TAG, "couldn't write color bytes to serial device");
-			}
-		}
+
+        if (mmOutStream!=null) {
+            try {
+                // Saida:
+                // Envio de uma mensagem pelo .write
+                mmOutStream.write(dataToSend);
+
+                Log.i("sendToArduino", String.valueOf(dataToSend));
+
+                /*
+                // Entrada:
+                // bytes returnados da read()
+                //int bytes;
+                // buffer de memória para o fluxo
+                //byte[] read = new byte[1024];
+
+                // Continuar ouvindo o InputStream enquanto conectado
+                // O loop principal é dedicado a leitura do InputStream
+
+                while (true) {
+                    try {
+                        // Read from the InputStream
+                        bytes = mmInStream.read(read);
+
+                        String readMessage = new String(read);
+                        Toast.makeText(this, readMessage, Toast.LENGTH_LONG).show();
+
+                    } catch (IOException e) {
+                        Toast.makeText(this, "Ocorreu um erro no recebimento da mensagem!", Toast.LENGTH_LONG).show();
+                    }
+                }
+                */
+
+            } catch (IOException e) {
+                Toast.makeText(this, "Ocorreu um erro!", Toast.LENGTH_LONG).show();
+            }
+        }
 	}
 	
     // sets the text boxes' text and color background.
